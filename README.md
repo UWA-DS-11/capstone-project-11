@@ -51,7 +51,7 @@ docker-compose logs -f app
 4. **Access the dashboard**
    http://localhost:8501
 
-5.5. **Run Validation Checks**
+5. **Run Validation Checks**
 
 We provide a `validation.sql` script to check database integrity and auction consistency.
 
@@ -65,6 +65,7 @@ docker cp validation.sql treasury_postgres:/validation.sql
 # run it inside Postgres
 docker exec -it treasury_postgres psql -U treasury_user -d treasury_db -c "\i /validation.sql"
 
+```bash
 ## Project Structure
 
 ```bash
