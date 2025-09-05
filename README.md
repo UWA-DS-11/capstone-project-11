@@ -55,16 +55,16 @@ docker-compose logs -f app
 
 We provide a `validation.sql` script to check database integrity and auction consistency.
 
-# Have the latest version
+ Have the latest version
 ```bash
 git pull origin main
 ```
 
-# copy script into the Postgres container
+copy script into the Postgres container
 ```bash
 docker cp validation.sql treasury_postgres:/validation.sql
 ```
-# run it inside Postgres
+run it inside Postgres
 ```bash
 docker exec -it treasury_postgres psql -U treasury_user -d treasury_db -c "\i /validation.sql"
 ```
