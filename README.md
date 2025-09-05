@@ -54,6 +54,7 @@ docker-compose logs -f app
 5. **Run Validation Checks**
 
 We provide a `validation.sql` script to check database integrity and auction consistency.
+
 # Have the latest version
 ```bash
 git pull origin main
