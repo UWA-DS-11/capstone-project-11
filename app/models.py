@@ -11,6 +11,7 @@ class Security(Base):
     cusip = Column(String(9), primary_key=True)
     security_type = Column(String(20), nullable=False)
     security_term = Column(String(20))
+    standardized_term = Column(String(20))
     original_security_term = Column(String(20))
     series = Column(String(100))
     corpus_cusip = Column(String(9))

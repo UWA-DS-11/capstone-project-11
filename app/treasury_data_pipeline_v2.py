@@ -2,13 +2,14 @@ import os
 import json
 import logging
 import requests
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, Optional
 
 import pandas as pd
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.dialects.postgresql import insert
 
 from models import Base, Security, Auction, BidderDetail, DataUpdate
@@ -26,6 +27,43 @@ class TreasuryDataPipeline:
         self.SessionLocal = sessionmaker(bind=self.engine)
         Base.metadata.create_all(bind=self.engine)
         self.api_base = os.getenv('TREASURY_API_BASE', 'https://www.treasurydirect.gov/TA_WS/securities/jqsearch')
+    
+    def standardize_maturity(self, security_term: str) -> str:
+        """
+        Standardize security terms to match TreasuryDirect classifications
+        Example: "3-Year 11-Month" becomes "4-Year"
+        """
+        if not security_term:
+            return security_term
+        
+        # Handle bills separately (keep original)
+        if "Week" in str(security_term) or "Day" in str(security_term):
+            return security_term
+        
+        # Extract years and months from term using regex
+        pattern = r'(\d+)-Year(?:\s+(\d+)-Month)?'
+        match = re.match(pattern, str(security_term))
+        
+        if match:
+            years = int(match.group(1))
+            months = int(match.group(2)) if match.group(2) else 0
+            
+            # Round up if months >= 6
+            if months >= 6:
+                years += 1
+            
+            # Standard treasury terms
+            standard_terms = [2, 3, 5, 7, 10, 20, 30]
+            
+            # Find closest standard term
+            if years in standard_terms:
+                return f"{years}-Year"
+            else:
+                # For non-standard years, just use the rounded year
+                return f"{years}-Year"
+        
+        # If pattern doesn't match, return original
+        return security_term
     
     def parse_value(self, value: Any, value_type: str = 'decimal') -> Optional[Any]:
         if value is None or value == '':
@@ -113,15 +151,25 @@ class TreasuryDataPipeline:
         try:
             for record in records:
                 try:
-                    # Process security first
+                    # Get original and standardized terms
+                    original_term = record.get('securityTerm')
+                    standardized_term = self.standardize_maturity(original_term)
+                    
+                    # Process security first - now with standardized term
                     security_data = {
                         'cusip': record.get('cusip'),
                         'security_type': record.get('securityType'),
-                        'security_term': record.get('securityTerm'),
+                        'security_term': original_term,
+                        'original_security_term': record.get('originalSecurityTerm'),
                         'series': record.get('series'),
                         'tips': self.parse_value(record.get('tips'), 'boolean'),
                         'callable': self.parse_value(record.get('callable'), 'boolean'),
                     }
+                    
+                    # Add standardized term if we have the column (need to update models.py)
+                    # For now, log the standardization
+                    if original_term != standardized_term:
+                        logger.debug(f"Standardized '{original_term}' to '{standardized_term}'")
                     
                     stmt = insert(Security).values(**security_data)
                     stmt = stmt.on_conflict_do_update(
@@ -216,6 +264,88 @@ class TreasuryDataPipeline:
         
         return stats
     
+    def export_to_excel(self, output_file: str = None) -> str:
+        """Export database data to Excel with standardized terms"""
+        if not output_file:
+            output_file = f"treasury_data_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        
+        session = self.SessionLocal()
+        
+        try:
+            # Fetch securities with standardized terms
+            securities_query = """
+            SELECT 
+                cusip,
+                security_type,
+                security_term as original_term,
+                series
+            FROM securities
+            """
+            securities_df = pd.read_sql(securities_query, self.engine)
+            
+            # Add standardized term column
+            securities_df['standardized_term'] = securities_df['original_term'].apply(self.standardize_maturity)
+            
+            # Fetch auctions
+            auctions_query = """
+            SELECT 
+                auction_id,
+                cusip,
+                auction_date,
+                issue_date,
+                maturity_date,
+                offering_amount,
+                total_accepted,
+                bid_to_cover_ratio,
+                high_yield,
+                low_yield
+            FROM auctions
+            ORDER BY auction_date DESC
+            """
+            auctions_df = pd.read_sql(auctions_query, self.engine)
+            
+            # Fetch bidder details
+            bidders_query = """
+            SELECT 
+                auction_id,
+                primary_dealer_percentage,
+                direct_bidder_percentage,
+                indirect_bidder_percentage
+            FROM bidder_details
+            """
+            bidders_df = pd.read_sql(bidders_query, self.engine)
+            
+            # Create Excel writer
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                securities_df.to_excel(writer, sheet_name='securities', index=False)
+                auctions_df.to_excel(writer, sheet_name='auctions', index=False)
+                bidders_df.to_excel(writer, sheet_name='bidder_details', index=False)
+                
+                # Add summary sheet
+                summary = pd.DataFrame({
+                    'Metric': [
+                        'Total Securities',
+                        'Total Auctions', 
+                        'Date Range',
+                        'Average Bid-to-Cover',
+                        'Data Updated'
+                    ],
+                    'Value': [
+                        len(securities_df),
+                        len(auctions_df),
+                        f"{auctions_df['auction_date'].min()} to {auctions_df['auction_date'].max()}",
+                        f"{auctions_df['bid_to_cover_ratio'].mean():.2f}",
+                        datetime.now().strftime('%Y-%m-%d %H:%M')
+                    ]
+                })
+                summary.to_excel(writer, sheet_name='summary', index=False)
+            
+            logger.info(f"Data exported to {output_file}")
+            return output_file
+            
+        finally:
+            session.close()
+    
     def run_pipeline(self) -> Dict[str, Any]:
         """Main pipeline execution"""
         session = self.SessionLocal()
@@ -273,3 +403,5 @@ if __name__ == "__main__":
     pipeline = TreasuryDataPipeline()
     result = pipeline.run_pipeline()
     print(f"Pipeline result: {result}")
+    
+    pipeline.export_to_excel()
