@@ -21,7 +21,7 @@ SELECT
 -- Show a few recent joined records (sanity sample)
 SELECT 
     a.auction_date,
-    a.security_type,
+    a.auction_format,
     a.bid_to_cover_ratio,
     w.wsj_fiscal_index
 FROM auction_with_wsj w
