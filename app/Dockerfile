@@ -17,4 +17,4 @@ RUN mkdir -p /data
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "streamlit_dashboard_v2.py", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "streamlit_dashboard.py", "--server.address=0.0.0.0"]
