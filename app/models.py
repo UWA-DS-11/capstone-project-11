@@ -105,3 +105,62 @@ class DataUpdate(Base):
     status = Column(String(20))
     error_message = Column(Text)
     run_type = Column(String(20))
+
+# NEW MODELS FOR FISCAL POLICY DATA
+
+class FiscalArticle(Base):
+    __tablename__ = 'fiscal_articles'
+    
+    article_id = Column(String(20), primary_key=True)
+    date = Column(Date, nullable=False)
+    is_fiscal_article = Column(Boolean, default=False)
+    has_tariff = Column(Boolean, default=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_article_date', 'date'),
+        Index('idx_fiscal_flag', 'is_fiscal_article'),
+    )
+
+class FiscalPolicyIndex(Base):
+    __tablename__ = 'fiscal_policy_indices'
+    
+    index_id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date, nullable=False, unique=True)
+    
+    # Article counts
+    total_articles = Column(Integer)
+    fiscal_articles = Column(Integer)
+    tariff_fiscal_articles = Column(Integer)
+    non_tariff_fiscal_articles = Column(Integer)
+    
+    # Rates
+    rate = Column(Numeric(10, 6))
+    tariff_rate = Column(Numeric(10, 6))
+    non_tariff_rate = Column(Numeric(10, 6))
+    
+    # Policy indices
+    fiscal_policy_index = Column(Numeric(10, 4))
+    tariff_fiscal_index = Column(Numeric(10, 4))
+    non_tariff_fiscal_index = Column(Numeric(10, 4))
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_policy_date', 'date'),
+    )
+
+class TopPhrase(Base):
+    __tablename__ = 'top_phrases'
+    
+    phrase_id = Column(Integer, primary_key=True, autoincrement=True)
+    phrase = Column(String(100), nullable=False, unique=True)
+    count = Column(Integer, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    __table_args__ = (
+        Index('idx_phrase_count', 'count'),
+    )
