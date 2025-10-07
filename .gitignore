@@ -134,3 +134,4 @@ credentials/
 *.crt
 *.cer
 notes.txt
+*.pyc

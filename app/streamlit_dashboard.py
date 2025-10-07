@@ -333,34 +333,70 @@ elif page == "📰 Fiscal Policy Index":
         # Fiscal Policy Index Over Time
         st.subheader("Fiscal Policy Index Trends")
         
+        # Add rolling average selector
+        col_smooth1, col_smooth2 = st.columns([3, 1])
+        with col_smooth2:
+            rolling_window = st.selectbox(
+                "Smoothing",
+                options=['Daily (Raw)', '7-Day Avg', '30-Day Avg', '90-Day Avg'],
+                index=2  # Default to 30-Day
+            )
+        
+        # Calculate rolling averages based on selection
+        plot_df = fiscal_filtered.copy().sort_values('date')
+        
+        if rolling_window != 'Daily (Raw)':
+            window_size = int(rolling_window.split('-')[0])
+            plot_df['fiscal_policy_index_smooth'] = plot_df['fiscal_policy_index'].rolling(
+                window=window_size, min_periods=1
+            ).mean()
+            plot_df['tariff_fiscal_index_smooth'] = plot_df['tariff_fiscal_index'].rolling(
+                window=window_size, min_periods=1
+            ).mean()
+            plot_df['non_tariff_fiscal_index_smooth'] = plot_df['non_tariff_fiscal_index'].rolling(
+                window=window_size, min_periods=1
+            ).mean()
+            
+            # Use smoothed columns
+            fiscal_col = 'fiscal_policy_index_smooth'
+            tariff_col = 'tariff_fiscal_index_smooth'
+            non_tariff_col = 'non_tariff_fiscal_index_smooth'
+            title_suffix = f' ({rolling_window})'
+        else:
+            # Use raw columns
+            fiscal_col = 'fiscal_policy_index'
+            tariff_col = 'tariff_fiscal_index'
+            non_tariff_col = 'non_tariff_fiscal_index'
+            title_suffix = ' (Daily)'
+        
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
-            x=fiscal_filtered['date'],
-            y=fiscal_filtered['fiscal_policy_index'],
+            x=plot_df['date'],
+            y=plot_df[fiscal_col],
             mode='lines',
             name='Overall Fiscal Index',
             line=dict(width=3, color='blue')
         ))
         
         fig.add_trace(go.Scatter(
-            x=fiscal_filtered['date'],
-            y=fiscal_filtered['tariff_fiscal_index'],
+            x=plot_df['date'],
+            y=plot_df[tariff_col],
             mode='lines',
             name='Tariff Fiscal Index',
             line=dict(width=2, color='red', dash='dash')
         ))
         
         fig.add_trace(go.Scatter(
-            x=fiscal_filtered['date'],
-            y=fiscal_filtered['non_tariff_fiscal_index'],
+            x=plot_df['date'],
+            y=plot_df[non_tariff_col],
             mode='lines',
             name='Non-Tariff Fiscal Index',
             line=dict(width=2, color='green', dash='dash')
         ))
         
         fig.update_layout(
-            title='Fiscal Policy Indices Over Time',
+            title=f'Fiscal Policy Indices Over Time{title_suffix}',
             xaxis_title='Date',
             yaxis_title='Index Value',
             hovermode='x unified'
@@ -475,12 +511,42 @@ elif page == "🔄 Fiscal-Auction Correlation":
         
         st.subheader("How does fiscal policy sentiment affect Treasury auctions?")
         
+        # Add rolling average selector
+        col_corr1, col_corr2 = st.columns([3, 1])
+        with col_corr2:
+            rolling_window_corr = st.selectbox(
+                "Smoothing",
+                options=['Daily (Raw)', '7-Day Avg', '30-Day Avg', '90-Day Avg'],
+                index=2,  # Default to 30-Day
+                key='correlation_rolling'
+            )
+        
+        # Calculate rolling averages
+        corr_plot_df = corr_filtered.copy().sort_values('date')
+        
+        if rolling_window_corr != 'Daily (Raw)':
+            window_size = int(rolling_window_corr.split('-')[0])
+            corr_plot_df['fiscal_policy_index_smooth'] = corr_plot_df['fiscal_policy_index'].rolling(
+                window=window_size, min_periods=1
+            ).mean()
+            corr_plot_df['avg_btc_smooth'] = corr_plot_df['avg_btc'].rolling(
+                window=window_size, min_periods=1
+            ).mean()
+            
+            fiscal_col_corr = 'fiscal_policy_index_smooth'
+            btc_col = 'avg_btc_smooth'
+            title_suffix_corr = f' ({rolling_window_corr})'
+        else:
+            fiscal_col_corr = 'fiscal_policy_index'
+            btc_col = 'avg_btc'
+            title_suffix_corr = ' (Daily)'
+        
         # Dual-axis chart: Fiscal Index vs Bid-to-Cover
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
-            x=corr_filtered['date'],
-            y=corr_filtered['fiscal_policy_index'],
+            x=corr_plot_df['date'],
+            y=corr_plot_df[fiscal_col_corr],
             mode='lines',
             name='Fiscal Policy Index',
             line=dict(color='blue', width=2),
@@ -488,8 +554,8 @@ elif page == "🔄 Fiscal-Auction Correlation":
         ))
         
         fig.add_trace(go.Scatter(
-            x=corr_filtered['date'],
-            y=corr_filtered['avg_btc'],
+            x=corr_plot_df['date'],
+            y=corr_plot_df[btc_col],
             mode='lines',
             name='Avg Bid-to-Cover',
             line=dict(color='red', width=2),
@@ -497,7 +563,7 @@ elif page == "🔄 Fiscal-Auction Correlation":
         ))
         
         fig.update_layout(
-            title='Fiscal Policy Index vs Treasury Bid-to-Cover Ratio',
+            title=f'Fiscal Policy Index vs Treasury Bid-to-Cover Ratio{title_suffix_corr}',
             xaxis=dict(title='Date'),
             yaxis=dict(
                 title='Fiscal Policy Index',
