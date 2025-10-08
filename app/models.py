@@ -106,6 +106,7 @@ class DataUpdate(Base):
     error_message = Column(Text)
     run_type = Column(String(20))
 
+
 # NEW MODELS FOR FISCAL POLICY DATA
 
 class FiscalArticle(Base):
