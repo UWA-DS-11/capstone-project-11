@@ -118,9 +118,14 @@ class TreasuryDataPipeline:
                         'cusip': record.get('cusip'),
                         'security_type': record.get('securityType'),
                         'security_term': record.get('securityTerm'),
+                        'original_security_term': record.get('originalSecurityTerm'),  # NEW
                         'series': record.get('series'),
+                        'corpus_cusip': record.get('corpusCusip'),
+                        'interest_rate': self.parse_value(record.get('interestRate'), 'decimal'),  # NEW
                         'tips': self.parse_value(record.get('tips'), 'boolean'),
+                        'floating_rate': self.parse_value(record.get('floatingRate'), 'boolean'),
                         'callable': self.parse_value(record.get('callable'), 'boolean'),
+                        'call_date': self.parse_value(record.get('callDate'), 'date'),
                     }
                     
                     stmt = insert(Security).values(**security_data)
@@ -143,20 +148,32 @@ class TreasuryDataPipeline:
                     auction_data = {
                         'cusip': record.get('cusip'),
                         'auction_date': auction_date,
+                        'auction_date_year': record.get('auctionDateYear'),  # NEW
                         'announcement_date': self.parse_value(record.get('announcementDate'), 'date'),
                         'issue_date': self.parse_value(record.get('issueDate'), 'date'),
                         'maturity_date': self.parse_value(record.get('maturityDate'), 'date'),
+                        'dated_date': self.parse_value(record.get('datedDate'), 'date'),
+                        'maturing_date': self.parse_value(record.get('maturingDate'), 'date'),  # NEW
                         'auction_format': record.get('auctionFormat'),
+                        'closing_time_competitive': record.get('closingTimeCompetitive'),
+                        'closing_time_noncompetitive': record.get('closingTimeNoncompetitive'),
                         'offering_amount': self.parse_value(record.get('offeringAmount'), 'decimal'),
+                        'allocation_percentage': self.parse_value(record.get('allocationPercentage'), 'decimal'),  # NEW
                         'total_tendered': self.parse_value(record.get('totalTendered'), 'decimal'),
                         'total_accepted': self.parse_value(record.get('totalAccepted'), 'decimal'),
                         'bid_to_cover_ratio': self.parse_value(record.get('bidToCoverRatio'), 'decimal'),
+                        'interest_rate': self.parse_value(record.get('interestRate'), 'decimal'),  # NEW
                         'high_yield': self.parse_value(record.get('highYield'), 'decimal'),
                         'low_yield': self.parse_value(record.get('lowYield'), 'decimal'),
                         'average_median_yield': self.parse_value(record.get('averageMedianYield'), 'decimal'),
+                        'high_discount_rate': self.parse_value(record.get('highDiscountRate'), 'decimal'),  # NEW
+                        'low_discount_rate': self.parse_value(record.get('lowDiscountRate'), 'decimal'),  # NEW
+                        'high_investment_rate': self.parse_value(record.get('highInvestmentRate'), 'decimal'),  # NEW
+                        'low_investment_rate': self.parse_value(record.get('lowInvestmentRate'), 'decimal'),  # NEW
                         'high_price': self.parse_value(record.get('highPrice'), 'decimal'),
                         'low_price': self.parse_value(record.get('lowPrice'), 'decimal'),
                         'price_per_100': self.parse_value(record.get('pricePer100'), 'decimal'),
+                        'updated_timestamp': self.parse_value(record.get('updatedTimestamp'), 'datetime'),
                     }
                     
                     if existing_auction:
@@ -177,6 +194,11 @@ class TreasuryDataPipeline:
                         primary_accepted = self.parse_value(record.get('primaryDealerAccepted'), 'decimal')
                         direct_accepted = self.parse_value(record.get('directBidderAccepted'), 'decimal')
                         indirect_accepted = self.parse_value(record.get('indirectBidderAccepted'), 'decimal')
+                        fima_accepted = self.parse_value(record.get('fimaNoncompetitiveAccepted'), 'decimal')  # NEW
+                        soma_accepted = self.parse_value(record.get('somaAccepted'), 'decimal')  # NEW
+                        competitive_accepted = self.parse_value(record.get('competitiveAccepted'), 'decimal')  # NEW
+                        noncompetitive_accepted = self.parse_value(record.get('noncompetitiveAccepted'), 'decimal')  # NEW
+                        treasury_retail_accepted = self.parse_value(record.get('treasuryRetailAccepted'), 'decimal')  # NEW
                         
                         bidder_data = {
                             'auction_id': auction.auction_id,
@@ -186,6 +208,13 @@ class TreasuryDataPipeline:
                             'direct_bidder_percentage': (direct_accepted / total_accepted * 100) if direct_accepted else None,
                             'indirect_bidder_accepted': indirect_accepted,
                             'indirect_bidder_percentage': (indirect_accepted / total_accepted * 100) if indirect_accepted else None,
+                            'fima_accepted': fima_accepted,  # NEW
+                            'fima_percentage': (fima_accepted / total_accepted * 100) if fima_accepted else None,  # NEW
+                            'soma_accepted': soma_accepted,  # NEW
+                            'soma_percentage': (soma_accepted / total_accepted * 100) if soma_accepted else None,  # NEW
+                            'competitive_accepted': competitive_accepted,  # NEW
+                            'noncompetitive_accepted': noncompetitive_accepted,  # NEW
+                            'treasury_retail_accepted': treasury_retail_accepted,  # NEW
                         }
                         
                         existing_bidder = session.query(BidderDetail).filter_by(

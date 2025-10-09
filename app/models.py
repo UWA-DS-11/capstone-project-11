@@ -14,6 +14,7 @@ class Security(Base):
     original_security_term = Column(String(20))
     series = Column(String(100))
     corpus_cusip = Column(String(9))
+    interest_rate = Column(Numeric(10, 6))  
     tips = Column(Boolean, default=False)
     floating_rate = Column(Boolean, default=False)
     callable = Column(Boolean, default=False)
@@ -36,15 +37,18 @@ class Auction(Base):
     # Key dates
     announcement_date = Column(Date)
     auction_date = Column(Date, nullable=False)
+    auction_date_year = Column(String(4))  
     issue_date = Column(Date)
     maturity_date = Column(Date)
     dated_date = Column(Date)
+    maturing_date = Column(Date)  
     
     # Auction details
     auction_format = Column(String(30))
     closing_time_competitive = Column(String(10))
     closing_time_noncompetitive = Column(String(10))
     offering_amount = Column(Numeric(20, 2))
+    allocation_percentage = Column(Numeric(5, 2))  
     
     # Results
     total_tendered = Column(Numeric(20, 2))
@@ -52,9 +56,14 @@ class Auction(Base):
     bid_to_cover_ratio = Column(Numeric(10, 4))
     
     # Yields/Rates
+    interest_rate = Column(Numeric(10, 6))   - for convenience
     high_yield = Column(Numeric(10, 4))
     low_yield = Column(Numeric(10, 4))
     average_median_yield = Column(Numeric(10, 4))
+    high_discount_rate = Column(Numeric(10, 4))  
+    low_discount_rate = Column(Numeric(10, 4))  
+    high_investment_rate = Column(Numeric(10, 4))  
+    low_investment_rate = Column(Numeric(10, 4))  
     
     # Prices
     high_price = Column(Numeric(10, 4))
@@ -81,12 +90,22 @@ class BidderDetail(Base):
     detail_id = Column(Integer, primary_key=True, autoincrement=True)
     auction_id = Column(Integer, ForeignKey('auctions.auction_id'), nullable=False, unique=True)
     
+    # Accepted amounts
     primary_dealer_accepted = Column(Numeric(20, 2))
-    primary_dealer_percentage = Column(Numeric(5, 2))
     direct_bidder_accepted = Column(Numeric(20, 2))
-    direct_bidder_percentage = Column(Numeric(5, 2))
     indirect_bidder_accepted = Column(Numeric(20, 2))
+    fima_accepted = Column(Numeric(20, 2))  
+    soma_accepted = Column(Numeric(20, 2))  
+    competitive_accepted = Column(Numeric(20, 2))  
+    noncompetitive_accepted = Column(Numeric(20, 2))  
+    treasury_retail_accepted = Column(Numeric(20, 2))  
+    
+    # Percentages
+    primary_dealer_percentage = Column(Numeric(5, 2))
+    direct_bidder_percentage = Column(Numeric(5, 2))
     indirect_bidder_percentage = Column(Numeric(5, 2))
+    fima_percentage = Column(Numeric(5, 2))  
+    soma_percentage = Column(Numeric(5, 2))  
     
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -107,7 +126,7 @@ class DataUpdate(Base):
     run_type = Column(String(20))
 
 
-# NEW MODELS FOR FISCAL POLICY DATA
+# FISCAL POLICY DATA MODELS
 
 class FiscalArticle(Base):
     __tablename__ = 'fiscal_articles'
