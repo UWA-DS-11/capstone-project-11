@@ -32,7 +32,9 @@ def load_auction_data():
         a.high_yield,
         a.offering_amount,
         bd.primary_dealer_percentage,
-        bd.indirect_bidder_percentage
+        bd.indirect_bidder_percentage,
+        bd.fima_percentage,
+        bd.soma_percentage
     FROM auctions a
     JOIN securities s ON a.cusip = s.cusip
     LEFT JOIN bidder_details bd ON a.auction_id = bd.auction_id
@@ -129,7 +131,7 @@ date_range = st.sidebar.date_input(
 security_options = ["All"] + sorted(df['security_type'].dropna().unique().tolist())
 security_selected = st.sidebar.selectbox("Security Type", options=security_options, index=0)
 
-global_rolling = st.sidebar.selectbox("Rolling smoothing (global)", options=["Daily (Raw)", "7-Day", "30-Day"], index=2)
+#global_rolling = st.sidebar.selectbox("Rolling smoothing (global)", options=["Daily (Raw)", "7-Day", "30-Day"], index=2)
 
 # -----------------------
 # Helper: apply global filters
@@ -152,13 +154,15 @@ filtered_df, filter_start, filter_end = apply_filters(df)
 # Page structure: top-level tabs
 # -----------------------
 st.title("Treasury Auction & Fiscal Policy Analytics")
-main_tabs = st.tabs(["Treasury Dashboard", "Fiscal Dashboard", "Correlation Explorer"])
+main_tabs = st.tabs(["Treasury Dashboard", "Fiscal Dashboard"])  # Removed Correlation Explorer
 
 # -----------------------
 # Treasury Dashboard Tab
 # -----------------------
 with main_tabs[0]:
     treasury_subtabs = st.tabs(["Overview", "Advanced Analytics", "Auction Correlations"])
+    
+    # ---------- Overview ----------
     with treasury_subtabs[0]:
         st.header("Treasury Overview")
         col_a, col_b = st.columns([3, 2])
@@ -218,7 +222,41 @@ with main_tabs[0]:
                 fig2 = px.bar(x=avg_dealers.index, y=avg_dealers.values, labels={'x': 'Bidder Type', 'y': 'Percentage'},
                               title='Average Dealer Participation')
                 st.plotly_chart(fig2, use_container_width=True)
-    
+
+        # ---------- FIMA vs SOMA Trend ----------
+        st.markdown("### FIMA vs SOMA Trend")
+        fima_soma_ts = filtered_df[['auction_date', 'fima_percentage', 'soma_percentage']].dropna()
+        if not fima_soma_ts.empty:
+            roll_map = {"Daily (Raw)": 1, "7-Day": 7, "30-Day": 30}
+            win_fs = roll_map.get(overview_roll, 30)
+            fima_soma_ts_sorted = fima_soma_ts.sort_values('auction_date')
+            
+            # Apply rolling average for smoother lines
+            fima_soma_ts_sorted['fima_smooth'] = fima_soma_ts_sorted['fima_percentage'].rolling(win_fs, min_periods=1).mean()
+            fima_soma_ts_sorted['soma_smooth'] = fima_soma_ts_sorted['soma_percentage'].rolling(win_fs, min_periods=1).mean()
+            
+            fig_fs = go.Figure()
+            fig_fs.add_trace(go.Scatter(x=fima_soma_ts_sorted['auction_date'], y=fima_soma_ts_sorted['fima_percentage'],
+                                        mode='lines+markers', name='FIMA (Raw)', line=dict(color='blue')))
+            fig_fs.add_trace(go.Scatter(x=fima_soma_ts_sorted['auction_date'], y=fima_soma_ts_sorted['fima_smooth'],
+                                        mode='lines', name=f'FIMA {win_fs}-Day Avg', line=dict(color='blue', dash='dash')))
+            
+            fig_fs.add_trace(go.Scatter(x=fima_soma_ts_sorted['auction_date'], y=fima_soma_ts_sorted['soma_percentage'],
+                                        mode='lines+markers', name='SOMA (Raw)', line=dict(color='green')))
+            fig_fs.add_trace(go.Scatter(x=fima_soma_ts_sorted['auction_date'], y=fima_soma_ts_sorted['soma_smooth'],
+                                        mode='lines', name=f'SOMA {win_fs}-Day Avg', line=dict(color='green', dash='dash')))
+            
+            fig_fs.update_layout(
+                title=f"FIMA vs SOMA Share Trend ({overview_roll})",
+                xaxis_title='Auction Date',
+                yaxis_title='Percentage (%)',
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_fs, use_container_width=True)
+        else:
+            st.info("No FIMA/SOMA data available for the selected filters")
+
+    # ---------- Advanced Analytics ----------
     with treasury_subtabs[1]:
         st.header("Advanced Analytics")
         vol_window = st.slider("Volatility rolling window (days)", min_value=7, max_value=180, value=30, step=1)
@@ -236,7 +274,8 @@ with main_tabs[0]:
         st.subheader("Statistical Summary by Security")
         stats = filtered_df.groupby('security_type')['bid_to_cover_ratio'].agg(['count', 'mean', 'std', 'min', 'max']).round(3)
         st.dataframe(stats, use_container_width=True)
-    
+
+    # ---------- Auction Correlations ----------
     with treasury_subtabs[2]:
         st.header("Auction Correlations")
         corr_columns = ['bid_to_cover_ratio', 'high_yield', 'offering_amount', 'primary_dealer_percentage', 'indirect_bidder_percentage']
@@ -318,8 +357,13 @@ with main_tabs[1]:
                 st.plotly_chart(fig3, use_container_width=True)
             
             st.markdown("Recent fiscal policy data")
-            st.dataframe(fiscal_filtered[['date', 'total_articles', 'fiscal_articles', 'tariff_fiscal_articles', 'fiscal_policy_index']].tail(50),
-                         use_container_width=True)
+            st.dataframe(
+                fiscal_filtered[['date', 'total_articles', 'fiscal_articles', 'tariff_fiscal_articles', 'fiscal_policy_index']]
+                .tail(120)
+                .sort_values(by='date', ascending=False) ,     
+                use_container_width=True
+                )
+
 
     with fiscal_subtabs[1]:
         st.header("Top Phrases from Fiscal Articles")
@@ -405,3 +449,4 @@ with main_tabs[1]:
             c1.metric("Fiscal Index ↔ BTC", f"{corr_fiscal_btc:.3f}" if pd.notna(corr_fiscal_btc) else "N/A")
             c2.metric("Tariff Index ↔ BTC", f"{corr_tariff_btc:.3f}" if pd.notna(corr_tariff_btc) else "N/A")
             c3.metric("Non-Tariff Index ↔ BTC", f"{corr_non_tariff_btc:.3f}" if pd.notna(corr_non_tariff_btc) else "N/A")
+
