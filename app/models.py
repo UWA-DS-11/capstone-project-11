@@ -56,7 +56,7 @@ class Auction(Base):
     bid_to_cover_ratio = Column(Numeric(10, 4))
     
     # Yields/Rates
-    interest_rate = Column(Numeric(10, 6))   - for convenience
+    interest_rate = Column(Numeric(10, 6))   # for convenience
     high_yield = Column(Numeric(10, 4))
     low_yield = Column(Numeric(10, 4))
     average_median_yield = Column(Numeric(10, 4))
