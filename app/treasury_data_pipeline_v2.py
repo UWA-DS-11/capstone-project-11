@@ -20,7 +20,7 @@ class TreasuryDataPipeline:
     def __init__(self, database_url: str = None):
         self.database_url = database_url or os.getenv(
             'DATABASE_URL', 
-            'postgresql://treasury_user:treasury_pass@localhost:5432/treasury_db'
+            os.getenv('DATABASE_URL', 'postgresql://treasury_user:treasury_secure_pass_2025@postgres:5432/treasury_db')
         )
         self.engine = create_engine(self.database_url, echo=False, pool_pre_ping=True)
         self.SessionLocal = sessionmaker(bind=self.engine)

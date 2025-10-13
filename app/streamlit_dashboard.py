@@ -21,7 +21,7 @@ st.set_page_config(
 def get_db_connection():
     database_url = os.getenv(
         "DATABASE_URL",
-        "postgresql://treasury_user:treasury_pass@localhost:5432/treasury_db",
+        "postgresql://treasury_user:treasury_secure_pass_2025@postgres:5432/treasury_db",
     )
     return create_engine(database_url)
 
@@ -106,18 +106,43 @@ def load_top_phrases(limit=50):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_correlation_data():
-    """Load combined data for correlation analysis"""
+    """Load combined data for correlation analysis with enhanced metrics"""
     engine = get_db_connection()
     query = """
     SELECT 
         a.auction_date as date,
-        AVG(a.bid_to_cover_ratio) as avg_btc,
-        AVG(a.high_yield) as avg_yield,
-        AVG(a.offering_amount) as avg_offering,
-        AVG(bd.fima_percentage) as avg_fima_pct,
-        AVG(bd.soma_percentage) as avg_soma_pct,
+        -- Core metrics
+        AVG(a.bid_to_cover_ratio) as bid_to_cover_ratio,
+        AVG(a.high_yield) as avg_high_yield,
+        AVG(a.low_yield) as avg_low_yield,
+        
+        -- Yields by specific terms
+        AVG(CASE WHEN s.security_term = '10-Year' THEN a.high_yield END) as ten_year_yield,
+        AVG(CASE WHEN s.security_term = '2-Year' THEN a.high_yield END) as two_year_yield,
+        AVG(CASE WHEN s.security_term = '5-Year' THEN a.high_yield END) as five_year_yield,
+        AVG(CASE WHEN s.security_term = '30-Year' THEN a.high_yield END) as thirty_year_yield,
+        
+        -- Dealer participation
+        AVG(bd.primary_dealer_percentage) as primary_dealer_share,
+        AVG(bd.direct_bidder_percentage) as direct_bidder_share,
+        AVG(bd.indirect_bidder_percentage) as indirect_bidder_share,
+        
+        -- FIMA & SOMA
+        AVG(bd.fima_percentage) as fima_share,
+        AVG(bd.soma_percentage) as soma_share,
+        SUM(bd.fima_accepted) / 1000000 as fima_accepted_millions,
+        SUM(bd.soma_accepted) / 1000000 as soma_accepted_millions,
+        
+        -- Offering amounts
+        AVG(a.offering_amount) / 1000000 as avg_offering_millions,
+        SUM(a.total_accepted) / 1000000 as total_accepted_millions,
+        
+        -- Additional metrics
+        AVG(a.high_yield - a.low_yield) as yield_spread,
+        
         COUNT(*) as auction_count
     FROM auctions a
+    JOIN securities s ON a.cusip = s.cusip
     LEFT JOIN bidder_details bd ON a.auction_id = bd.auction_id
     WHERE a.auction_date >= '2020-01-01'
     GROUP BY a.auction_date
@@ -138,6 +163,7 @@ page = st.sidebar.radio(
     "Select Analysis",
     [
         "📊 Overview",
+        "🔬 Interactive Comparisons",
         "🚨 Market Stress Indicators",
         "🏦 Fed Participation (FIMA/SOMA)",
         "📈 Advanced Analytics",
@@ -215,8 +241,8 @@ if page == "📊 Overview":
         st.metric("Total Auctions", f"{total_auctions:,}", f"{delta} last 30 days")
 
     with col2:
-        avg_btc = filtered_df["bid_to_cover_ratio"].mean()
-        st.metric("Avg Bid-to-Cover", f"{avg_btc:.2f}" if pd.notna(avg_btc) else "N/A")
+        bid_to_cover_ratio = filtered_df["bid_to_cover_ratio"].mean()
+        st.metric("Avg Bid-to-Cover", f"{bid_to_cover_ratio:.2f}" if pd.notna(bid_to_cover_ratio) else "N/A")
 
     with col3:
         total_offered = filtered_df["offering_amount"].sum() / 1e9
@@ -311,6 +337,365 @@ if page == "📊 Overview":
                 labels={"x": "Bidder Type", "y": "Percentage"},
             )
             st.plotly_chart(fig3, use_container_width=True)
+
+elif page == "🔬 Interactive Comparisons":
+    st.header("🔬 Interactive Treasury vs Fiscal Policy Comparisons")
+    st.caption("Compare treasury auction metrics with fiscal policy and tariff indices")
+
+    corr_df = load_correlation_data()
+
+    if corr_df.empty:
+        st.warning("Insufficient data for comparison")
+        st.stop()
+
+    comparison_df = corr_df[
+        (corr_df["date"] >= start_datetime) & (corr_df["date"] < end_datetime)
+    ].copy()
+
+    if comparison_df.empty:
+        st.warning("No data for selected date range")
+        st.stop()
+
+    st.markdown("---")
+
+    # Configuration
+    col1, col2, col3 = st.columns([2, 2, 1])
+
+    with col1:
+        fiscal_indices = {
+            "📊 Fiscal Policy Index": "fiscal_policy_index",
+            "🚢 Tariff Fiscal Index": "tariff_fiscal_index",
+            "📝 Non-Tariff Fiscal Index": "non_tariff_fiscal_index",
+        }
+
+        selected_indices = st.multiselect(
+            "📈 Select Fiscal Indices (one or more)",
+            options=list(fiscal_indices.keys()),
+            default=["📊 Fiscal Policy Index", "🚢 Tariff Fiscal Index"],
+            help="Compare these fiscal policy measures against treasury data",
+        )
+
+    with col2:
+        # CLIENT REQUESTED METRICS FIRST
+        treasury_metrics = {
+            "🎯 Bid-to-Cover Ratio": "bid_to_cover_ratio",
+            "👔 Primary Dealer Share %": "primary_dealer_share",
+            "🌍 FIMA Share %": "fima_share",
+            "🏛️ SOMA Accepted ($M)": "soma_accepted_millions",
+            "📊 10-Year Yield": "ten_year_yield",
+            "📈 2-Year Yield": "two_year_yield",
+            # Additional helpful metrics
+            "📉 5-Year Yield": "five_year_yield",
+            "📐 30-Year Yield": "thirty_year_yield",
+            "💰 Total Accepted ($M)": "total_accepted_millions",
+            "📦 Avg Offering ($M)": "avg_offering_millions",
+            "📏 Yield Spread": "yield_spread",
+            "👥 Direct Bidder Share %": "direct_bidder_share",
+            "🌐 Indirect Bidder Share %": "indirect_bidder_share",
+            "💵 FIMA Accepted ($M)": "fima_accepted_millions",
+            "🏦 SOMA Share %": "soma_share",
+        }
+
+        selected_metrics = st.multiselect(
+            "💹 Select Treasury Metrics (one or more)",
+            options=list(treasury_metrics.keys()),
+            default=[
+                "🎯 Bid-to-Cover Ratio",
+                "👔 Primary Dealer Share %",
+                "🌍 FIMA Share %",
+            ],
+            help="Treasury auction metrics to analyze",
+        )
+
+    with col3:
+        smoothing = st.selectbox(
+            "Smoothing", options=["None", "7-Day", "30-Day", "90-Day"], index=2
+        )
+
+    if not selected_indices or not selected_metrics:
+        st.info("👆 Select at least one fiscal index and one treasury metric")
+        st.stop()
+
+    st.markdown("---")
+
+    # Apply smoothing
+    plot_df = comparison_df.copy().sort_values("date")
+
+    if smoothing != "None":
+        window_size = int(smoothing.split("-")[0])
+
+        for name, col in fiscal_indices.items():
+            if col in plot_df.columns:
+                plot_df[f"{col}_smooth"] = (
+                    plot_df[col].rolling(window=window_size, min_periods=1).mean()
+                )
+
+        for name, col in treasury_metrics.items():
+            if col in plot_df.columns:
+                plot_df[f"{col}_smooth"] = (
+                    plot_df[col].rolling(window=window_size, min_periods=1).mean()
+                )
+
+        suffix = "_smooth"
+        title_suffix = f" ({smoothing} Average)"
+    else:
+        suffix = ""
+        title_suffix = ""
+
+    # 1. TIME SERIES COMPARISONS
+    st.subheader("📈 Time Series: Fiscal Indices vs Treasury Metrics")
+
+    for metric_name in selected_metrics:
+        metric_col = treasury_metrics[metric_name]
+        base_metric_col = metric_col.replace("_smooth", "")
+
+        if base_metric_col not in plot_df.columns:
+            continue
+
+        # Check if we have data
+        if plot_df[base_metric_col].isna().all():
+            st.info(f"No data available for {metric_name}")
+            continue
+
+        fig = go.Figure()
+
+        # Add fiscal indices (left y-axis)
+        colors = {
+            "📊 Fiscal Policy Index": "blue",
+            "🚢 Tariff Fiscal Index": "red",
+            "📝 Non-Tariff Fiscal Index": "green",
+        }
+
+        for index_name in selected_indices:
+            index_col = fiscal_indices[index_name] + suffix
+            base_index_col = fiscal_indices[index_name]
+
+            if base_index_col not in plot_df.columns:
+                continue
+
+            fig.add_trace(
+                go.Scatter(
+                    x=plot_df["date"],
+                    y=plot_df[index_col if suffix else base_index_col],
+                    mode="lines",
+                    name=index_name,
+                    line=dict(color=colors.get(index_name, "purple"), width=2),
+                    yaxis="y",
+                )
+            )
+
+        # Add treasury metric (right y-axis)
+        fig.add_trace(
+            go.Scatter(
+                x=plot_df["date"],
+                y=plot_df[metric_col + suffix if suffix else metric_col],
+                mode="lines",
+                name=metric_name,
+                line=dict(color="orange", width=3, dash="dash"),
+                yaxis="y2",
+            )
+        )
+
+        fig.update_layout(
+            title=f"{metric_name} vs Fiscal Indices{title_suffix}",
+            xaxis=dict(title="Date"),
+            yaxis=dict(title="Fiscal Index Value", side="left"),
+            yaxis2=dict(title=metric_name, overlaying="y", side="right"),
+            hovermode="x unified",
+            height=500,
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
+            ),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("---")
+
+    # 2. SCATTER PLOTS WITH CORRELATIONS
+    st.subheader("🔍 Correlation Scatter Plots")
+    st.caption(
+        "Each plot shows the relationship between a fiscal index and treasury metric with correlation coefficient"
+    )
+
+    for metric_name in selected_metrics:
+        metric_col = treasury_metrics[metric_name]
+
+        if metric_col not in plot_df.columns or plot_df[metric_col].isna().all():
+            continue
+
+        st.markdown(f"### {metric_name}")
+
+        cols = st.columns(len(selected_indices))
+
+        for idx, index_name in enumerate(selected_indices):
+            index_col = fiscal_indices[index_name]
+
+            if index_col not in plot_df.columns:
+                continue
+
+            with cols[idx]:
+                temp_df = plot_df[[index_col, metric_col]].dropna()
+
+                if len(temp_df) >= 10:
+                    corr = temp_df.corr().iloc[0, 1]
+
+                    fig = px.scatter(
+                        temp_df,
+                        x=index_col,
+                        y=metric_col,
+                        trendline="ols",
+                        title=f"{index_name.split()[0]}",
+                        labels={index_col: "Index", metric_col: "Metric"},
+                    )
+
+                    fig.update_layout(height=350)
+
+                    # Color code correlation
+                    if abs(corr) > 0.5:
+                        color = "green"
+                        strength = "Strong"
+                    elif abs(corr) > 0.3:
+                        color = "orange"
+                        strength = "Moderate"
+                    else:
+                        color = "red"
+                        strength = "Weak"
+
+                    fig.add_annotation(
+                        text=f"<b>r = {corr:.3f}</b><br>{strength}",
+                        xref="paper",
+                        yref="paper",
+                        x=0.05,
+                        y=0.95,
+                        showarrow=False,
+                        bgcolor="white",
+                        bordercolor=color,
+                        borderwidth=2,
+                        font=dict(size=12),
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("Insufficient data")
+
+        st.markdown("---")
+
+    # 3. CORRELATION MATRIX HEATMAP
+    st.subheader("🔥 Correlation Matrix")
+
+    heatmap_cols = []
+    heatmap_labels = []
+
+    for index_name in selected_indices:
+        col = fiscal_indices[index_name]
+        if col in plot_df.columns:
+            heatmap_cols.append(col)
+            heatmap_labels.append(index_name.split()[0])  # Shorter labels
+
+    for metric_name in selected_metrics:
+        col = treasury_metrics[metric_name]
+        if col in plot_df.columns and not plot_df[col].isna().all():
+            heatmap_cols.append(col)
+            heatmap_labels.append(
+                metric_name.split()[1] if len(metric_name.split()) > 1 else metric_name
+            )
+
+    if len(heatmap_cols) > 1:
+        corr_matrix = plot_df[heatmap_cols].corr()
+        corr_matrix.index = heatmap_labels
+        corr_matrix.columns = heatmap_labels
+
+        fig = px.imshow(
+            corr_matrix,
+            text_auto=".2f",
+            aspect="auto",
+            color_continuous_scale="RdBu_r",
+            range_color=[-1, 1],
+            labels=dict(color="Correlation"),
+        )
+        fig.update_layout(
+            title="Correlation Heatmap: Fiscal Indices & Treasury Metrics",
+            height=max(400, len(heatmap_cols) * 50),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # 4. SUMMARY STATISTICS TABLE
+    st.subheader("📊 Summary Statistics")
+
+    summary_rows = []
+
+    for metric_name in selected_metrics:
+        metric_col = treasury_metrics[metric_name]
+        if metric_col not in plot_df.columns:
+            continue
+
+        for index_name in selected_indices:
+            index_col = fiscal_indices[index_name]
+            if index_col not in plot_df.columns:
+                continue
+
+            temp_df = plot_df[[index_col, metric_col]].dropna()
+
+            if len(temp_df) >= 10:
+                corr = temp_df.corr().iloc[0, 1]
+
+                if abs(corr) > 0.5:
+                    strength = "🟢 Strong"
+                elif abs(corr) > 0.3:
+                    strength = "🟡 Moderate"
+                else:
+                    strength = "🔴 Weak"
+
+                summary_rows.append(
+                    {
+                        "Fiscal Index": index_name,
+                        "Treasury Metric": metric_name,
+                        "Correlation": f"{corr:.4f}",
+                        "Strength": strength,
+                        "Direction": "↗️ Positive" if corr > 0 else "↘️ Negative",
+                        "Observations": len(temp_df),
+                    }
+                )
+
+    if summary_rows:
+        summary_df = pd.DataFrame(summary_rows)
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        st.info(
+            """
+        **📖 Interpretation Guide:**
+        - **Strong (|r| > 0.5)**: Variables move together significantly
+        - **Moderate (0.3 < |r| ≤ 0.5)**: Noticeable relationship
+        - **Weak (|r| ≤ 0.3)**: Little linear relationship
+        - **Positive**: Both increase together
+        - **Negative**: One increases as other decreases
+        """
+        )
+
+    # 5. EXPORT DATA
+    st.markdown("---")
+    st.subheader("💾 Export Data")
+
+    export_cols = ["date"]
+    for name in selected_indices:
+        col = fiscal_indices[name]
+        if col in plot_df.columns:
+            export_cols.append(col)
+
+    for name in selected_metrics:
+        col = treasury_metrics[name]
+        if col in plot_df.columns:
+            export_cols.append(col)
+
+    export_df = plot_df[export_cols].dropna(how="all")
+
+    csv = export_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Comparison Data (CSV)",
+        data=csv,
+        file_name=f"treasury_fiscal_comparison_{datetime.now().strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+    )
 
 elif page == "🚨 Market Stress Indicators":
     st.header("Market Stress Indicators")
@@ -470,16 +855,16 @@ elif page == "🏦 Fed Participation (FIMA/SOMA)":
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            avg_fima_pct = fed_data["fima_percentage"].mean()
-            st.metric("Avg FIMA %", f"{avg_fima_pct:.1f}%")
+            fima_share = fed_data["fima_percentage"].mean()
+            st.metric("Avg FIMA %", f"{fima_share:.1f}%")
 
         with col2:
             total_fima = fed_data["fima_accepted"].sum() / 1e9
             st.metric("Total FIMA", f"${total_fima:.1f}B")
 
         with col3:
-            avg_soma_pct = fed_data["soma_percentage"].mean()
-            st.metric("Avg SOMA %", f"{avg_soma_pct:.1f}%")
+            soma_share = fed_data["soma_percentage"].mean()
+            st.metric("Avg SOMA %", f"{soma_share:.1f}%")
 
         with col4:
             total_soma = fed_data["soma_accepted"].sum() / 1e9
@@ -939,18 +1324,18 @@ elif page == "🔄 Fiscal-Auction Correlation":
                 .rolling(window=window_size, min_periods=1)
                 .mean()
             )
-            corr_plot_df["avg_btc_smooth"] = (
-                corr_plot_df["avg_btc"]
+            corr_plot_df["bid_to_cover_ratio_smooth"] = (
+                corr_plot_df["bid_to_cover_ratio"]
                 .rolling(window=window_size, min_periods=1)
                 .mean()
             )
 
             fiscal_col_corr = "fiscal_policy_index_smooth"
-            btc_col = "avg_btc_smooth"
+            btc_col = "bid_to_cover_ratio_smooth"
             title_suffix_corr = f" ({rolling_window_corr})"
         else:
             fiscal_col_corr = "fiscal_policy_index"
-            btc_col = "avg_btc"
+            btc_col = "bid_to_cover_ratio"
             title_suffix_corr = " (Daily)"
 
         # Dual-axis chart: Fiscal Index vs Bid-to-Cover
@@ -994,16 +1379,16 @@ elif page == "🔄 Fiscal-Auction Correlation":
         col1, col2, col3, col4 = st.columns(4)
 
         # Calculate correlations
-        corr_btc = corr_filtered[["fiscal_policy_index", "avg_btc"]].corr().iloc[0, 1]
+        corr_btc = corr_filtered[["fiscal_policy_index", "bid_to_cover_ratio"]].corr().iloc[0, 1]
         corr_yield = (
-            corr_filtered[["fiscal_policy_index", "avg_yield"]].corr().iloc[0, 1]
+            corr_filtered[["fiscal_policy_index", "avg_high_yield"]].corr().iloc[0, 1]
         )
         corr_tariff_btc = (
-            corr_filtered[["tariff_fiscal_index", "avg_btc"]].corr().iloc[0, 1]
+            corr_filtered[["tariff_fiscal_index", "bid_to_cover_ratio"]].corr().iloc[0, 1]
         )
 
         # FIMA correlation with fiscal index
-        fima_data = corr_filtered[["fiscal_policy_index", "avg_fima_pct"]].dropna()
+        fima_data = corr_filtered[["fiscal_policy_index", "fima_share"]].dropna()
         corr_fima = fima_data.corr().iloc[0, 1] if len(fima_data) > 10 else None
 
         with col1:
@@ -1047,11 +1432,11 @@ elif page == "🔄 Fiscal-Auction Correlation":
             fig3 = px.scatter(
                 corr_filtered,
                 x="fiscal_policy_index",
-                y="avg_btc",
+                y="bid_to_cover_ratio",
                 title="Relationship: Fiscal Policy Index & Bid-to-Cover",
                 labels={
                     "fiscal_policy_index": "Fiscal Policy Index",
-                    "avg_btc": "Avg Bid-to-Cover Ratio",
+                    "bid_to_cover_ratio": "Avg Bid-to-Cover Ratio",
                 },
             )
             st.plotly_chart(fig3, use_container_width=True)
@@ -1061,11 +1446,11 @@ elif page == "🔄 Fiscal-Auction Correlation":
             fig4 = px.scatter(
                 corr_filtered,
                 x="fiscal_policy_index",
-                y="avg_yield",
+                y="avg_high_yield",
                 title="Relationship: Fiscal Policy Index & Yields",
                 labels={
                     "fiscal_policy_index": "Fiscal Policy Index",
-                    "avg_yield": "Avg Treasury Yield (%)",
+                    "avg_high_yield": "Avg Treasury Yield (%)",
                 },
             )
             st.plotly_chart(fig4, use_container_width=True)
@@ -1077,10 +1462,10 @@ elif page == "🔄 Fiscal-Auction Correlation":
             "fiscal_policy_index",
             "tariff_fiscal_index",
             "non_tariff_fiscal_index",
-            "avg_btc",
-            "avg_yield",
-            "avg_fima_pct",
-            "avg_soma_pct",
+            "bid_to_cover_ratio",
+            "avg_high_yield",
+            "fima_share",
+            "soma_share",
         ]
 
         # Only include columns that exist in the data

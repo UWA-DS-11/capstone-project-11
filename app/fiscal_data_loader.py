@@ -30,7 +30,7 @@ class FiscalDataLoader:
         """
         self.database_url = database_url or os.getenv(
             'DATABASE_URL',
-            'postgresql://treasury_user:treasury_secure_pass_2025@localhost:5432/treasury_db'
+            'postgresql://treasury_user:treasury_secure_pass_2025@postgres:5432/treasury_db'
         )
         self.csv_directory = csv_directory
         self.engine = create_engine(self.database_url, echo=False)

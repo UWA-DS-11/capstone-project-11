@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def run_migration():
     database_url = os.getenv(
         'DATABASE_URL',
-        'postgresql://treasury_user:treasury_pass@localhost:5432/treasury_db'
+        os.getenv('DATABASE_URL', 'postgresql://treasury_user:treasury_secure_pass_2025@postgres:5432/treasury_db')
     )
     
     engine = create_engine(database_url)

@@ -134,4 +134,7 @@ credentials/
 *.crt
 *.cer
 notes.txt
+*.pyc__pycache__/
+*.bak*
 *.pyc
+data/
