@@ -253,6 +253,7 @@ treasury-analytics/
 │   ├── models.py                   # SQLAlchemy models
 │   ├── scheduler.py                # Daily update scheduler
 │   ├── analytics.py                # Analysis utilities
+│   ├── validation.sql              # Validation testing queries                
 │   ├── requirements.txt            # Python dependencies
 │   └── Dockerfile                  # App container config
 ├── init/
